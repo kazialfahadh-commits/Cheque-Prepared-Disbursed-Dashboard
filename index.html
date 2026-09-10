@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cheque Preparation & Handover Executive Dashboard</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SheetJS for Excel Parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(8px); border: 1px solid #e2e8f0; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .sort-header { cursor: pointer; user-select: none; }
+        .sort-header:hover { background-color: #e2e8f0; }
+    </style>
+</head>
+<body class="text-slate-800 antialiased">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-slate-900 text-white sticky top-0 z-50 shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-indigo-600 rounded-lg">
+                    <i data-lucide="wallet" class="w-6 h-6 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight">Cheque Preparation & Handover Dashboard</h1>
+                    <p class="text-xs text-slate-400">Executive Settlement & Handover Analytics</p>
+                </div>
+            </div>
+
+            <!-- Tab Buttons & File Upload Controls -->
+            <div class="flex items-center space-x-3">
+                <div class="bg-slate-800 p-1 rounded-lg border border-slate-700 flex text-xs font-semibold">
+                    <button id="tabReadyBtn" onclick="switchMainTab('ready')" class="px-4 py-1.5 rounded-md bg-indigo-600 text-white shadow-sm transition">Cheque Ready Sheet</button>
+                    <button id="tabPaidBtn" onclick="switchMainTab('paid')" class="px-4 py-1.5 rounded-md text-slate-300 hover:text-white transition">Cheque Paid Sheet</button>
+                </div>
+
+                <button id="masterResetBtn" class="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg shadow-sm transition flex items-center gap-1.5">
+                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Reset Filters
+                </button>
+
+                <label class="flex items-center space-x-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg cursor-pointer transition shadow-sm">
+                    <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+                    <span>Upload Excel File</span>
+                    <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" class="hidden">
+                </label>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+
+        <!-- Active Filter Banner -->
+        <div id="activeMonthBanner" class="hidden bg-indigo-50 border border-indigo-200 text-indigo-900 px-4 py-3 rounded-xl flex items-center justify-between shadow-sm">
+            <div class="flex items-center space-x-2">
+                <i data-lucide="calendar" class="w-5 h-5 text-indigo-600"></i>
+                <span class="text-sm font-medium">Filtering Dashboard Records for Handover Month: <strong id="selectedMonthLabel" class="text-indigo-700"></strong></span>
+            </div>
+            <button id="clearMonthFilterBtn" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg font-semibold transition">
+                Clear Month Filter
+            </button>
+        </div>
+
+        <!-- Global Filters Panel -->
+        <div class="glass-card rounded-xl p-5 shadow-sm">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                    <i data-lucide="filter" class="w-4 h-4 text-indigo-500"></i> Dashboard Filters
+                </h2>
+                <span id="recordCountBadge" class="text-xs px-2.5 py-1 bg-indigo-50 text-indigo-700 font-semibold rounded-full border border-indigo-200">
+                    Showing: 0 records
+                </span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4" id="filterContainer">
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Department / Sub Area</label>
+                    <select id="deptFilter" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        <option value="ALL">All Departments</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Salary Grade</label>
+                    <select id="gradeFilter" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        <option value="ALL">All Salary Grades</option>
+                    </select>
+                </div>
+                <!-- Communication Status Filter (Hidden on Cheque Paid Tab) -->
+                <div id="rarksFilterBox">
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Communication Status (Rarks)</label>
+                    <select id="rarksFilter" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        <option value="ALL">All Communication Statuses</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Tenure Bracket</label>
+                    <select id="tenureFilter" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        <option value="ALL">All Service Lengths</option>
+                        <option value="< 1 Year">< 1 Year</option>
+                        <option value="1 - 3 Years">1 - 3 Years</option>
+                        <option value="3 - 5 Years">3 - 5 Years</option>
+                        <option value="5 - 10 Years">5 - 10 Years</option>
+                        <option value="10+ Years">10+ Years</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= SECTION 1: CHEQUE READY ================= -->
+        <div id="sectionReady" class="space-y-6">
+            <!-- KPI Cards Row -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="glass-card rounded-xl p-4 shadow-sm border-l-4 border-slate-600">
+                    <p class="text-xs font-medium text-slate-500 uppercase">Total Ready Cheques</p>
+                    <h3 id="kpiReadyCount" class="text-2xl font-bold text-slate-900 mt-1">0</h3>
+                    <p class="text-xs text-slate-400 mt-1">Unique Employee IDs</p>
+                </div>
+                <div class="glass-card rounded-xl p-4 shadow-sm border-l-4 border-sky-500">
+                    <p class="text-xs font-medium text-slate-500 uppercase">Total Value Ready</p>
+                    <h3 id="kpiReadyAmount" class="text-2xl font-bold text-sky-600 mt-1">BDT 0</h3>
+                    <p class="text-xs text-slate-400 mt-1">Aggregated Ready Funds</p>
+                </div>
+                <div class="glass-card rounded-xl p-4 shadow-sm border-l-4 border-emerald-500">
+                    <p class="text-xs font-medium text-slate-500 uppercase">Clearance Certificate Ready</p>
+                    <h3 id="kpiReadyClearance" class="text-2xl font-bold text-emerald-600 mt-1">0</h3>
+                    <p id="kpiReadyClearancePct" class="text-xs text-emerald-600 font-semibold mt-1">0% Conversion</p>
+                </div>
+                <div class="glass-card rounded-xl p-4 shadow-sm border-l-4 border-rose-500">
+                    <p class="text-xs font-medium text-slate-500 uppercase">Unreachable / Follow-Up</p>
+                    <h3 id="kpiReadyFollowup" class="text-2xl font-bold text-rose-600 mt-1">0</h3>
+                    <p class="text-xs text-slate-400 mt-1">Switched Off / Network / Busy</p>
+                </div>
+            </div>
+
+            <!-- Charts Row 1 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="glass-card rounded-xl p-5 shadow-sm flex flex-col">
+                    <h3 class="text-base font-bold text-slate-800 mb-2">Communication Status Distribution (Rarks)</h3>
+                    <div class="relative flex-1 min-h-[300px] flex items-center justify-center">
+                        <canvas id="rarksChart"></canvas>
+                    </div>
+                </div>
+                <div class="glass-card rounded-xl p-5 shadow-sm flex flex-col">
+                    <h3 class="text-base font-bold text-slate-800 mb-2">Ready Cheque Funds by Department (BDT)</h3>
+                    <div class="relative flex-1 min-h-[300px]">
+                        <canvas id="deptAmountChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Row 2 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="glass-card rounded-xl p-5 shadow-sm">
+                    <h3 class="text-base font-bold text-slate-800 mb-1">Average Tenure (Years) by Salary Grade</h3>
+                    <p class="text-xs text-slate-500 mb-4">Calculated from Joining Date to Separation Date</p>
+                    <div class="relative min-h-[300px]">
+                        <canvas id="tenureGradeChart"></canvas>
+                    </div>
+                </div>
+                <div class="glass-card rounded-xl p-5 shadow-sm">
+                    <h3 class="text-base font-bold text-slate-800 mb-1">Top Employee Designations</h3>
+                    <p class="text-xs text-slate-500 mb-4">Frequency of Cheques Pending Collection</p>
+                    <div class="relative min-h-[300px]">
+                        <canvas id="desigChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= SECTION 2: CHEQUE PAID ================= -->
+        <div id="sectionPaid" class="space-y-6 hidden">
+            <!-- KPI Cards Row -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="glass-card rounded-xl p-4 shadow-sm border-l-4 border-emerald-500">
+                    <p class="text-xs font-medium text-slate-500 uppercase">Total Disbursed Cheques</p>
+                    <h3 id="kpiPaidCount" class="text-2xl font-bold text-emerald-600 mt-1">0</h3>
+                    <p class="text-xs text-slate-400 mt-1">Handed Over to Employees</p>
+                </div>
+                <div class="glass-card rounded-xl p-4 shadow-sm border-l-4 border-indigo-500">
+                    <p class="text-xs font-medium text-slate-500 uppercase">Total Disbursed Amount</p>
+                    <h3 id="kpiPaidAmount" class="text-2xl font-bold text-indigo-600 mt-1">BDT 0</h3>
+                    <p class="text-xs text-slate-400 mt-1">Aggregated Paid Value</p>
+                </div>
+                <div class="glass-card rounded-xl p-4 shadow-sm border-l-4 border-amber-500">
+                    <p class="text-xs font-medium text-slate-500 uppercase">Peak Collection Month</p>
+                    <h3 id="kpiPaidPeak" class="text-2xl font-bold text-amber-600 mt-1">-</h3>
+                    <p class="text-xs text-slate-400 mt-1">Highest Monthly Handover Count</p>
+                </div>
+                <div class="glass-card rounded-xl p-4 shadow-sm border-l-4 border-slate-600">
+                    <p class="text-xs font-medium text-slate-500 uppercase">Avg Employee Tenure</p>
+                    <h3 id="kpiPaidAvgTenure" class="text-2xl font-bold text-slate-900 mt-1">0 Yrs</h3>
+                    <p class="text-xs text-slate-400 mt-1">Length of Service (Disbursed)</p>
+                </div>
+            </div>
+
+            <!-- Clickable Dynamic Monthly Bar Graph -->
+            <div class="glass-card rounded-xl p-5 shadow-sm">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-800">Monthly / Yearwise Cheque Handover Trend</h3>
+                        <p class="text-xs text-indigo-600 font-medium mt-0.5">💡 Click on any month bar to dynamically filter the records table and dashboard</p>
+                    </div>
+                </div>
+                <div class="relative min-h-[320px]">
+                    <canvas id="paidMonthlyChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Charts Row 2: Paid Sheet Department & Grade Analytics -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="glass-card rounded-xl p-5 shadow-sm">
+                    <h3 class="text-base font-bold text-slate-800 mb-1">Disbursed Funds by Department (BDT)</h3>
+                    <p class="text-xs text-slate-500 mb-4">Total payout grouped by sub-area</p>
+                    <div class="relative min-h-[300px]">
+                        <canvas id="paidDeptChart"></canvas>
+                    </div>
+                </div>
+                <div class="glass-card rounded-xl p-5 shadow-sm">
+                    <h3 class="text-base font-bold text-slate-800 mb-1">Disbursement Distribution by Grade</h3>
+                    <p class="text-xs text-slate-500 mb-4">Cheque handover volume per salary grade</p>
+                    <div class="relative min-h-[300px] flex items-center justify-center">
+                        <canvas id="paidGradeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= DATA TABLE SECTION ================= -->
+        <div class="glass-card rounded-xl p-5 shadow-sm space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <h3 id="tableHeaderTitle" class="text-base font-bold text-slate-800">Detailed Employee Records</h3>
+                
+                <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                    <!-- In-Table Status Filter Dropdown -->
+                    <select id="tableStatusFilter" class="px-3 py-2 text-xs font-semibold border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-slate-700 shadow-sm">
+                        <option value="ALL">All Table Statuses</option>
+                    </select>
+
+                    <!-- Search Input Box -->
+                    <div class="w-full sm:w-64">
+                        <input type="text" id="tableSearch" placeholder="Search Name, ID No, Grade, Designation..." class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto custom-scrollbar max-h-96 rounded-lg border border-slate-200">
+                <table class="w-full text-left text-sm text-slate-600">
+                    <thead class="bg-slate-100 text-xs font-semibold text-slate-700 uppercase sticky top-0 border-b border-slate-200">
+                        <tr id="tableHeadRow">
+                            <!-- Dynamic Table Head -->
+                        </tr>
+                    </thead>
+                    <tbody id="dataTableBody" class="divide-y divide-slate-200 bg-white">
+                        <!-- Dynamic Table Body -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- JavaScript Application Engine -->
+    <script>
+        let currentTab = 'ready';
+        let rawReadyData = [];
+        let rawPaidData = [];
+        let filteredReadyData = [];
+        let filteredPaidData = [];
+        let selectedMonthFilter = 'ALL';
+        let sortCol = 'id';
+        let sortAsc = true;
+        let charts = {};
+
+        const fileInput = document.getElementById('fileInput');
+        const masterResetBtn = document.getElementById('masterResetBtn');
+        const deptFilter = document.getElementById('deptFilter');
+        const gradeFilter = document.getElementById('gradeFilter');
+        const rarksFilter = document.getElementById('rarksFilter');
+        const rarksFilterBox = document.getElementById('rarksFilterBox');
+        const tenureFilter = document.getElementById('tenureFilter');
+        const tableSearch = document.getElementById('tableSearch');
+        const tableStatusFilter = document.getElementById('tableStatusFilter');
+        const activeMonthBanner = document.getElementById('activeMonthBanner');
+        const selectedMonthLabel = document.getElementById('selectedMonthLabel');
+        const clearMonthFilterBtn = document.getElementById('clearMonthFilterBtn');
+
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            setupEventListeners();
+            
+            // Auto-load Excel master file if present in repository root
+            fetch('Cheque Preparation & Handover Dashboard_2.xlsx')
+                .then(res => res.arrayBuffer())
+                .then(buffer => parseWorkbookBuffer(buffer))
+                .catch(() => {
+                    fetch('Cheque Preparation & Handover Dashboard.xlsx')
+                        .then(res => res.arrayBuffer())
+                        .then(buffer => parseWorkbookBuffer(buffer))
+                        .catch(() => console.log("Manual upload required via button."));
+                });
+        });
+
+        function setupEventListeners() {
+            fileInput.addEventListener('change', handleFileUpload);
+            masterResetBtn.addEventListener('click', resetAllFilters);
+            deptFilter.addEventListener('change', applyGlobalFilters);
+            gradeFilter.addEventListener('change', applyGlobalFilters);
+            rarksFilter.addEventListener('change', applyGlobalFilters);
+            tenureFilter.addEventListener('change', applyGlobalFilters);
+            tableSearch.addEventListener('input', renderTable);
+            tableStatusFilter.addEventListener('change', renderTable);
+
+            clearMonthFilterBtn.addEventListener('click', () => {
+                selectedMonthFilter = 'ALL';
+                activeMonthBanner.classList.add('hidden');
+                applyGlobalFilters();
+            });
+        }
+
+        function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    parseWorkbookBuffer(evt.target.result);
+                } catch (err) {
+                    alert('Error parsing Excel spreadsheet.');
+                    console.error(err);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function getFlexProp(obj, targets) {
+            if (!obj) return '';
+            const objKeys = Object.keys(obj);
+            for (let t of targets) {
+                const targetClean = t.toLowerCase().replace(/[^a-z0-9]/g, '');
+                for (let k of objKeys) {
+                    const keyClean = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (keyClean === targetClean || keyClean.includes(targetClean)) {
+                        if (obj[k] !== undefined && obj[k] !== null) {
+                            return String(obj[k]).trim();
+                        }
+                    }
+                }
+            }
+            return '';
+        }
+
+        function parseWorkbookBuffer(buffer) {
+            const data = new Uint8Array(buffer);
+            const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+
+            if (workbook.SheetNames.includes('Cheque Ready')) {
+                const sheet = workbook.Sheets['Cheque Ready'];
+                const json = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+                processReadyData(json);
+            }
+
+            if (workbook.SheetNames.includes('Cheque Paid')) {
+                const sheet = workbook.Sheets['Cheque Paid'];
+                const json = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+                processPaidData(json);
+            }
+
+            populateDropdownFilters();
+            applyGlobalFilters();
+        }
+
+        function processReadyData(json) {
+            rawReadyData = [];
+            json.forEach(row => {
+                const id = getFlexProp(row, ['idno', 'id']);
+                if (!id || id.toLowerCase().includes('id no')) return;
+
+                const name = getFlexProp(row, ['name']) || 'N/A';
+                const rarks = getFlexProp(row, ['rarks']) || 'Pending';
+                const dept = getFlexProp(row, ['perssubareatxt', 'subarea', 'department']) || 'Unassigned';
+                const grade = getFlexProp(row, ['grade']) || 'N/A';
+                const desig = getFlexProp(row, ['lastdesig', 'designation']) || 'N/A';
+                
+                const amtStr = getFlexProp(row, ['totalamount', 'totalamt', 'amount']);
+                const amt = parseFloat(amtStr.replace(/,/g, '')) || 0;
+
+                const jDate = parseUniversalDate(getFlexProp(row, ['joiningdate']));
+                const sDate = parseUniversalDate(getFlexProp(row, ['dateofseparation', 'separationdate']));
+                const tenure = calculateTenureInfo(jDate, sDate);
+
+                rawReadyData.push({
+                    id, name, rarks, dept, grade, desig, amount: amt,
+                    joinDate: jDate, sepDate: sDate,
+                    tenureYears: tenure.years, tenureBracket: tenure.bracket
+                });
+            });
+        }
+
+        function processPaidData(json) {
+            rawPaidData = [];
+            json.forEach(row => {
+                const id = getFlexProp(row, ['idno', 'id']);
+                if (!id || id.toLowerCase().includes('id no')) return;
+
+                const name = getFlexProp(row, ['name']) || 'N/A';
+                const rarks = getFlexProp(row, ['rarks']) || 'PAID';
+                const dept = getFlexProp(row, ['perssubareatxt', 'subarea', 'department']) || 'Unassigned';
+                const grade = getFlexProp(row, ['grade']) || 'N/A';
+                const desig = getFlexProp(row, ['lastdesig', 'designation']) || 'N/A';
+
+                const amtStr = getFlexProp(row, ['totalamount', 'totalamt', 'amount']);
+                const amt = parseFloat(amtStr.replace(/,/g, '')) || 0;
+
+                const recDate = parseUniversalDate(getFlexProp(row, ['fathersname', 'fathername', 'chequereceiveddate', 'date']));
+                const monthStr = recDate ? recDate.substring(0, 7) : 'Unknown';
+
+                const jDate = parseUniversalDate(getFlexProp(row, ['joiningdate']));
+                const sDate = parseUniversalDate(getFlexProp(row, ['dateofseparation', 'separationdate']));
+                const tenure = calculateTenureInfo(jDate, sDate);
+
+                rawPaidData.push({
+                    id, name, rarks, dept, grade, desig, amount: amt,
+                    receivedDate: recDate, monthStr,
+                    joinDate: jDate, sepDate: sDate,
+                    tenureYears: tenure.years, tenureBracket: tenure.bracket
+                });
+            });
+        }
+
+        function calculateTenureInfo(jStr, sStr) {
+            if (!jStr || !sStr) return { years: 0, bracket: 'Unknown' };
+            const j = new Date(jStr);
+            const s = new Date(sStr);
+            if (isNaN(j.getTime()) || isNaN(s.getTime())) return { years: 0, bracket: 'Unknown' };
+
+            const diffDays = Math.round((s - j) / (1000 * 60 * 60 * 24));
+            const years = +(diffDays / 365.25).toFixed(1);
+
+            let bracket = '10+ Years';
+            if (years < 1) bracket = '< 1 Year';
+            else if (years <= 3) bracket = '1 - 3 Years';
+            else if (years <= 5) bracket = '3 - 5 Years';
+            else if (years <= 10) bracket = '5 - 10 Years';
+
+            return { years: years >= 0 ? years : 0, bracket };
+        }
+
+        function parseUniversalDate(val) {
+            if (!val || String(val).toLowerCase() === 'nat') return null;
+            const d = new Date(val);
+            if (!isNaN(d.getTime())) {
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${y}-${m}-${day}`;
+            }
+            return null;
+        }
+
+        function populateDropdownFilters() {
+            const activeDataSet = currentTab === 'ready' ? rawReadyData : rawPaidData;
+
+            const depts = [...new Set(activeDataSet.map(d => d.dept))].sort();
+            const grades = [...new Set(activeDataSet.map(d => d.grade))].sort();
+            const rarks = [...new Set(rawReadyData.map(d => d.rarks))].sort();
+
+            deptFilter.innerHTML = '<option value="ALL">All Departments</option>';
+            depts.forEach(d => { if(d) deptFilter.innerHTML += `<option value="${d}">${d}</option>`; });
+
+            gradeFilter.innerHTML = '<option value="ALL">All Salary Grades</option>';
+            grades.forEach(g => { if(g) gradeFilter.innerHTML += `<option value="${g}">${g}</option>`; });
+
+            rarksFilter.innerHTML = '<option value="ALL">All Communication Statuses</option>';
+            rarks.forEach(r => { if(r) rarksFilter.innerHTML += `<option value="${r}">${r}</option>`; });
+
+            tableStatusFilter.innerHTML = '<option value="ALL">All Table Statuses</option>';
+            const statusOptions = [...new Set(activeDataSet.map(d => d.rarks))].sort();
+            statusOptions.forEach(s => { if(s) tableStatusFilter.innerHTML += `<option value="${s}">${s}</option>`; });
+        }
+
+        function applyGlobalFilters() {
+            const dept = deptFilter.value;
+            const grade = gradeFilter.value;
+            const rarks = rarksFilter.value;
+            const tenure = tenureFilter.value;
+
+            if (currentTab === 'ready') {
+                filteredReadyData = rawReadyData.filter(d => {
+                    if (dept !== 'ALL' && d.dept !== dept) return false;
+                    if (grade !== 'ALL' && d.grade !== grade) return false;
+                    if (rarks !== 'ALL' && d.rarks !== rarks) return false;
+                    if (tenure !== 'ALL' && d.tenureBracket !== tenure) return false;
+                    return true;
+                });
+                document.getElementById('recordCountBadge').innerText = `Showing: ${filteredReadyData.length} records`;
+                updateReadyKPIs();
+                renderReadyCharts();
+            } else {
+                filteredPaidData = rawPaidData.filter(d => {
+                    if (dept !== 'ALL' && d.dept !== dept) return false;
+                    if (grade !== 'ALL' && d.grade !== grade) return false;
+                    if (tenure !== 'ALL' && d.tenureBracket !== tenure) return false;
+                    if (selectedMonthFilter !== 'ALL' && d.monthStr !== selectedMonthFilter) return false;
+                    return true;
+                });
+                document.getElementById('recordCountBadge').innerText = `Showing: ${filteredPaidData.length} records`;
+                updatePaidKPIs();
+                renderPaidCharts();
+            }
+
+            renderTable();
+        }
+
+        function resetAllFilters() {
+            deptFilter.value = 'ALL';
+            gradeFilter.value = 'ALL';
+            rarksFilter.value = 'ALL';
+            tenureFilter.value = 'ALL';
+            tableStatusFilter.value = 'ALL';
+            selectedMonthFilter = 'ALL';
+            tableSearch.value = '';
+            activeMonthBanner.classList.add('hidden');
+            applyGlobalFilters();
+        }
+
+        function switchMainTab(tab) {
+            currentTab = tab;
+            document.getElementById('sectionReady').classList.toggle('hidden', tab !== 'ready');
+            document.getElementById('sectionPaid').classList.toggle('hidden', tab !== 'paid');
+
+            rarksFilterBox.classList.toggle('hidden', tab === 'paid');
+
+            document.getElementById('tabReadyBtn').className = tab === 'ready' ?
+                'px-4 py-1.5 rounded-md bg-indigo-600 text-white shadow-sm transition' :
+                'px-4 py-1.5 rounded-md text-slate-300 hover:text-white transition';
+
+            document.getElementById('tabPaidBtn').className = tab === 'paid' ?
+                'px-4 py-1.5 rounded-md bg-indigo-600 text-white shadow-sm transition' :
+                'px-4 py-1.5 rounded-md text-slate-300 hover:text-white transition';
+
+            populateDropdownFilters();
+            applyGlobalFilters();
+        }
+
+        function updateReadyKPIs() {
+            const total = filteredReadyData.length;
+            const totalAmt = filteredReadyData.reduce((a, b) => a + b.amount, 0);
+            
+            const clearanceCount = filteredReadyData.filter(d => d.rarks.toLowerCase().includes('clearance')).length;
+            const followupCount = filteredReadyData.filter(d => {
+                const r = d.rarks.toLowerCase();
+                return r.includes('switch') || r.includes('network') || r.includes('busy') || r.includes('call') || r.includes('wrong');
+            }).length;
+
+            document.getElementById('kpiReadyCount').innerText = total;
+            document.getElementById('kpiReadyAmount').innerText = 'BDT ' + totalAmt.toLocaleString();
+            document.getElementById('kpiReadyClearance').innerText = clearanceCount;
+            document.getElementById('kpiReadyClearancePct').innerText = total > 0 ? ((clearanceCount / total) * 100).toFixed(1) + '% Conversion' : '0%';
+            document.getElementById('kpiReadyFollowup').innerText = followupCount;
+        }
+
+        function updatePaidKPIs() {
+            const total = filteredPaidData.length;
+            const totalAmt = filteredPaidData.reduce((a, b) => a + b.amount, 0);
+            
+            const monthCounts = {};
+            filteredPaidData.forEach(d => { if(d.monthStr && d.monthStr !== 'Unknown') monthCounts[d.monthStr] = (monthCounts[d.monthStr] || 0) + 1; });
+            const peakMonth = Object.keys(monthCounts).reduce((a, b) => monthCounts[a] > monthCounts[b] ? a : b, '-');
+
+            const avgTenure = total > 0 ? (filteredPaidData.reduce((a, b) => a + b.tenureYears, 0) / total).toFixed(1) : 0;
+
+            document.getElementById('kpiPaidCount').innerText = total;
+            document.getElementById('kpiPaidAmount').innerText = 'BDT ' + totalAmt.toLocaleString();
+            document.getElementById('kpiPaidPeak').innerText = peakMonth !== '-' ? `${peakMonth} (${monthCounts[peakMonth]})` : '-';
+            document.getElementById('kpiPaidAvgTenure').innerText = `${avgTenure} Yrs`;
+        }
+
+        function renderReadyCharts() {
+            const rarksMap = {};
+            filteredReadyData.forEach(d => rarksMap[d.rarks] = (rarksMap[d.rarks] || 0) + 1);
+
+            const labels = Object.keys(rarksMap);
+            const chartColors = labels.map(label => {
+                const l = label.toLowerCase();
+                if (l.includes('clearance')) return '#10b981'; // Emerald Green
+                if (l.includes('switch')) return '#ef4444';    // Red
+                if (l.includes('network')) return '#f59e0b';   // Amber
+                if (l.includes('call')) return '#3b82f6';      // Blue
+                if (l.includes('wrong')) return '#ec4899';     // Pink
+                return '#8b5cf6';                              // Purple
+            });
+
+            if (charts.rarksChart) charts.rarksChart.destroy();
+            charts.rarksChart = new Chart(document.getElementById('rarksChart').getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: Object.values(rarksMap),
+                        backgroundColor: chartColors
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+            });
+
+            const deptAmt = {};
+            filteredReadyData.forEach(d => deptAmt[d.dept] = (deptAmt[d.dept] || 0) + d.amount);
+
+            if (charts.deptAmountChart) charts.deptAmountChart.destroy();
+            charts.deptAmountChart = new Chart(document.getElementById('deptAmountChart').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(deptAmt),
+                    datasets: [{ label: 'Amount (BDT)', data: Object.values(deptAmt), backgroundColor: '#06b6d4' }]
+                },
+                options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+
+            const gradeTenure = {}, gradeCount = {};
+            filteredReadyData.forEach(d => {
+                gradeTenure[d.grade] = (gradeTenure[d.grade] || 0) + d.tenureYears;
+                gradeCount[d.grade] = (gradeCount[d.grade] || 0) + 1;
+            });
+            const avgTenure = {};
+            Object.keys(gradeTenure).forEach(g => avgTenure[g] = (gradeTenure[g] / gradeCount[g]).toFixed(1));
+
+            if (charts.tenureGradeChart) charts.tenureGradeChart.destroy();
+            charts.tenureGradeChart = new Chart(document.getElementById('tenureGradeChart').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(avgTenure),
+                    datasets: [{ label: 'Avg Tenure (Years)', data: Object.values(avgTenure), backgroundColor: '#8b5cf6' }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+            });
+
+            const desigMap = {};
+            filteredReadyData.forEach(d => desigMap[d.desig] = (desigMap[d.desig] || 0) + 1);
+            const topDesig = Object.entries(desigMap).sort((a,b) => b[1] - a[1]).slice(0, 6);
+
+            if (charts.desigChart) charts.desigChart.destroy();
+            charts.desigChart = new Chart(document.getElementById('desigChart').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: topDesig.map(x => x[0]),
+                    datasets: [{ label: 'Pending Cheques', data: topDesig.map(x => x[1]), backgroundColor: '#ec4899' }]
+                },
+                options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+        }
+
+        function renderPaidCharts() {
+            const baseDataSet = (selectedMonthFilter !== 'ALL') ? rawPaidData.filter(d => {
+                const dept = deptFilter.value;
+                const grade = gradeFilter.value;
+                const tenure = tenureFilter.value;
+                if (dept !== 'ALL' && d.dept !== dept) return false;
+                if (grade !== 'ALL' && d.grade !== grade) return false;
+                if (tenure !== 'ALL' && d.tenureBracket !== tenure) return false;
+                return true;
+            }) : filteredPaidData;
+
+            const monthMap = {};
+            baseDataSet.forEach(d => {
+                if(d.monthStr && d.monthStr !== 'Unknown') monthMap[d.monthStr] = (monthMap[d.monthStr] || 0) + 1;
+            });
+            const sortedMonths = Object.keys(monthMap).sort();
+            const bgColors = sortedMonths.map(m => (selectedMonthFilter === 'ALL' || selectedMonthFilter === m) ? '#10b981' : '#10b98133');
+
+            if (charts.paidMonthlyChart) charts.paidMonthlyChart.destroy();
+            charts.paidMonthlyChart = new Chart(document.getElementById('paidMonthlyChart').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: sortedMonths,
+                    datasets: [{ label: 'Cheques Handed Over', data: sortedMonths.map(m => monthMap[m]), backgroundColor: bgColors }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    onClick: (e, elements) => {
+                        if (elements.length > 0) {
+                            const clickedM = sortedMonths[elements[0].index];
+                            if (selectedMonthFilter === clickedM) {
+                                selectedMonthFilter = 'ALL';
+                                activeMonthBanner.classList.add('hidden');
+                            } else {
+                                selectedMonthFilter = clickedM;
+                                selectedMonthLabel.innerText = selectedMonthFilter;
+                                activeMonthBanner.classList.remove('hidden');
+                            }
+                            applyGlobalFilters();
+                        }
+                    },
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+
+            const paidDeptAmt = {};
+            filteredPaidData.forEach(d => paidDeptAmt[d.dept] = (paidDeptAmt[d.dept] || 0) + d.amount);
+            const topPaidDept = Object.entries(paidDeptAmt).sort((a, b) => b[1] - a[1]).slice(0, 7);
+
+            if (charts.paidDeptChart) charts.paidDeptChart.destroy();
+            charts.paidDeptChart = new Chart(document.getElementById('paidDeptChart').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: topPaidDept.map(x => x[0]),
+                    datasets: [{ label: 'Total Disbursed (BDT)', data: topPaidDept.map(x => x[1]), backgroundColor: '#6366f1' }]
+                },
+                options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+
+            const paidGradeMap = {};
+            filteredPaidData.forEach(d => paidGradeMap[d.grade] = (paidGradeMap[d.grade] || 0) + 1);
+
+            if (charts.paidGradeChart) charts.paidGradeChart.destroy();
+            charts.paidGradeChart = new Chart(document.getElementById('paidGradeChart').getContext('2d'), {
+                type: 'pie',
+                data: {
+                    labels: Object.keys(paidGradeMap),
+                    datasets: [{ data: Object.values(paidGradeMap), backgroundColor: ['#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'] }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+            });
+        }
+
+        function renderTable() {
+            const thead = document.getElementById('tableHeadRow');
+            const tbody = document.getElementById('dataTableBody');
+            const title = document.getElementById('tableHeaderTitle');
+            const search = tableSearch.value.toLowerCase();
+            const statusFilter = tableStatusFilter.value;
+
+            const activeDataSet = currentTab === 'ready' ? filteredReadyData : filteredPaidData;
+            title.innerText = currentTab === 'ready' ? 'Detailed Cheque Ready Records' : 'Detailed Cheque Paid Records';
+
+            if (currentTab === 'ready') {
+                thead.innerHTML = `
+                    <th class="py-3 px-4 sort-header" onclick="sortTable('id')">ID No.</th>
+                    <th class="py-3 px-4 sort-header" onclick="sortTable('name')">Name</th>
+                    <th class="py-3 px-4 sort-header" onclick="sortTable('dept')">Department</th>
+                    <th class="py-3 px-4 sort-header" onclick="sortTable('grade')">Grade</th>
+                    <th class="py-3 px-4 sort-header" onclick="sortTable('rarks')">Status (Rarks)</th>
+                    <th class="py-3 px-4 sort-header" onclick="sortTable('tenureYears')">Tenure</th>
+                    <th class="py-3 px-4 sort-header" onclick="sortTable('amount')">Total Amount</th>
+                `;
+            } else {
+                thead.innerHTML = `
+                    <th class="py-3 px-4 sort-header" onclick="sortTable('id')">ID No.</th>
+                    <th class="py-3 px-4 sort-header" onclick="sortTable('name')">Name</th>
+                    <th class="py-3 px-4 sort-header" onclick="sortTable('dept')">Department</th>
+                    <th class="py-3 px-4 sort-header" onclick="sortTable('desig')">Designation</th>
+                    <th class="py-3 px-4 sort-header" onclick="sortTable('grade')">Grade</th>
+                    <th class="py-3 px-4 sort-header" onclick="sortTable('receivedDate')">Handover Date</th>
+                    <th class="py-3 px-4 sort-header" onclick="sortTable('amount')">Total Amount</th>
+                `;
+            }
+
+            let records = activeDataSet.filter(d => {
+                if (statusFilter !== 'ALL' && d.rarks !== statusFilter) return false;
+
+                return String(d.id).toLowerCase().includes(search) ||
+                       String(d.name).toLowerCase().includes(search) ||
+                       String(d.dept).toLowerCase().includes(search) ||
+                       String(d.grade).toLowerCase().includes(search) ||
+                       String(d.desig || '').toLowerCase().includes(search);
+            });
+
+            records.sort((a, b) => {
+                let valA = a[sortCol];
+                let valB = b[sortCol];
+                if (valA === null || valA === undefined) valA = '';
+                if (valB === null || valB === undefined) valB = '';
+
+                if (typeof valA === 'number' && typeof valB === 'number') {
+                    return sortAsc ? valA - valB : valB - valA;
+                }
+                valA = String(valA).toLowerCase();
+                valB = String(valB).toLowerCase();
+                return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            });
+
+            tbody.innerHTML = '';
+            records.slice(0, 100).forEach(d => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50 transition-colors';
+
+                if (currentTab === 'ready') {
+                    let badgeClass = 'bg-slate-100 text-slate-700';
+                    if (d.rarks.toLowerCase().includes('clearance')) {
+                        badgeClass = 'bg-emerald-100 text-emerald-800';
+                    } else if (['switched off', 'network probl', 'line busy'].some(k => d.rarks.toLowerCase().includes(k))) {
+                        badgeClass = 'bg-rose-100 text-rose-800';
+                    }
+
+                    tr.innerHTML = `
+                        <td class="py-3 px-4 font-semibold text-indigo-600">${d.id}</td>
+                        <td class="py-3 px-4">${d.name}</td>
+                        <td class="py-3 px-4">${d.dept}</td>
+                        <td class="py-3 px-4 font-medium">${d.grade}</td>
+                        <td class="py-3 px-4"><span class="px-2.5 py-1 text-xs font-semibold rounded-full ${badgeClass}">${d.rarks}</span></td>
+                        <td class="py-3 px-4 font-mono">${d.tenureYears} yrs</td>
+                        <td class="py-3 px-4 font-semibold text-slate-900">BDT ${d.amount.toLocaleString()}</td>
+                    `;
+                } else {
+                    tr.innerHTML = `
+                        <td class="py-3 px-4 font-semibold text-emerald-600">${d.id}</td>
+                        <td class="py-3 px-4">${d.name}</td>
+                        <td class="py-3 px-4">${d.dept}</td>
+                        <td class="py-3 px-4">${d.desig}</td>
+                        <td class="py-3 px-4 font-medium">${d.grade}</td>
+                        <td class="py-3 px-4 font-mono text-emerald-700">${d.receivedDate || '-'}</td>
+                        <td class="py-3 px-4 font-semibold text-slate-900">BDT ${d.amount.toLocaleString()}</td>
+                    `;
+                }
+                tbody.appendChild(tr);
+            });
+        }
+
+        function sortTable(col) {
+            if (sortCol === col) {
+                sortAsc = !sortAsc;
+            } else {
+                sortCol = col;
+                sortAsc = true;
+            }
+            renderTable();
+        }
+    </script>
+</body>
+</html>
